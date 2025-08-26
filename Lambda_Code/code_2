@@ -1,0 +1,125 @@
+import json
+import boto3
+from datetime import datetime
+import re
+dynamodb = boto3.resource('dynamodb')
+table = dynamodb.Table('dominos_table_bhanu')
+def value_inslot(slots,sname):
+    value_=slots.get(sname)
+    if value_ and "value" in value_ and "interpretedValue" in value_["value"]:
+        return value_["value"]["interpretedValue"]
+    else:
+        return "" 
+        
+def validate_slots(slots):
+    ## validate number ##
+    # number = slots.get('Phone_number', {}).get('value', {}).get('interpretedValue', '')
+    number=value_inslot(slots,'Phone_number')
+    if len(number)!=10 :
+        return 0
+    ### validate name
+    name=value_inslot(slots,'user_name')
+    if name=="" or not name.isalpha():
+        return 1
+    ## pizzaname
+    pn=value_inslot(slots,'pizzaname')
+    if pn=="" or not pn.isalpha():
+        return 2
+    ## size
+    s=value_inslot(slots,'size')
+    if s=="":
+        return 3
+    ## quatity 
+    quantity = value_inslot(slots,'quantity')
+    if quantity=="":
+        return 4
+    if int(quantity)>10:
+        return 4
+    return [name,pn,s,quantity]
+
+    
+def lambda_handler(event, context):
+    # TODO implement
+    re_slot=["Phone_number","user_name","pizzaname","size","quantity"]
+    print("E",event)
+    intent_name=event['sessionState']['intent']['name']
+    intent = event["sessionState"]["intent"]
+    # print(intent_name)
+    slots=event['sessionState']['intent']['slots']
+    # print(slots)
+    sessionid=event.get('sessionId','Unknownsession')
+    invocation_source = event.get("invocationSource")
+    # print(sessionid)
+    if intent_name=="pizza_order":
+        if invocation_source == "DialogCodeHook":
+            # number = slots.get('Phone_number', {}).get('value', {}).get('interpretedValue', '')
+            value=validate_slots(slots)
+            # print(type(value))
+            if value in [0,1,2,3,4]:
+                return {
+                "sessionState": {
+                    "dialogAction": {
+                        "type": "ElicitSlot",
+                        "slotToElicit": re_slot[value]
+                    },
+                    "intent": {
+                        "name": intent_name,
+                        "slots": slots,
+                        "state": "InProgress"
+                    }
+                },
+                }
+            elif isinstance(value,list) :
+                return {
+                    "sessionState": {
+                        "dialogAction": {
+                            "type": "Delegate"
+                        },
+                        "intent": {
+                            "name": intent_name,
+                            "slots": slots,
+                            "state": "InProgress"
+                        }
+                    }
+                }
+        elif invocation_source == "FulfillmentCodeHook":
+            confirmation_state = intent.get("confirmationState", "None")
+            if confirmation_state == "Confirmed":
+                return {
+                "sessionState": {
+                    "dialogAction": {
+                        "type": "Close",
+                    },
+                    "intent": {
+                        "name": intent_name,
+                        "slots": slots,
+                        "state":"Fulfilled",
+                    }
+                },
+                 "messages": [
+                        {
+                            "contentType": "PlainText",
+                            "content": "Your pizza order has been placed! "
+                        }
+                    ]
+                }
+            elif confirmation_state == "Denied":
+                return {
+                "sessionState": {
+                    "dialogAction": {
+                        "type": "Close",
+                    },
+                    "intent": {
+                        "name": intent_name,
+                        "slots": slots,
+                        "state":"Fulfilled",
+                    }
+                },
+                 "messages": [
+                        {
+                            "contentType": "PlainText",
+                            "content": "Okay, I won’t place that order."
+                        }
+                    ]
+                }
+        
